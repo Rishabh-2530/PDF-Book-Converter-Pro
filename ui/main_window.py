@@ -143,6 +143,7 @@ class MainWindow(QMainWindow):
             if self.pdf_manager.open_pdf(file_path):
                 self.cache_manager.clear_cache()
                 self.current_page = 0
+                self.zoom_manager.reset_zoom()  # Reset zoom when opening new PDF
                 self.pdf_loaded.emit(file_path)
                 self.update_preview()
                 self.toolbar.update_total_pages(self.pdf_manager.total_pages)
@@ -166,6 +167,7 @@ class MainWindow(QMainWindow):
                 self.current_page += 1
                 self.update_preview()
                 self.page_changed.emit(self.current_page)
+                self.toolbar.update_page_display(self.current_page + 1, self.pdf_manager.total_pages)
     
     def previous_page(self) -> None:
         """
@@ -176,6 +178,7 @@ class MainWindow(QMainWindow):
                 self.current_page -= 1
                 self.update_preview()
                 self.page_changed.emit(self.current_page)
+                self.toolbar.update_page_display(self.current_page + 1, self.pdf_manager.total_pages)
     
     def first_page(self) -> None:
         """
@@ -185,6 +188,7 @@ class MainWindow(QMainWindow):
             self.current_page = 0
             self.update_preview()
             self.page_changed.emit(self.current_page)
+            self.toolbar.update_page_display(self.current_page + 1, self.pdf_manager.total_pages)
     
     def last_page(self) -> None:
         """
@@ -194,22 +198,29 @@ class MainWindow(QMainWindow):
             self.current_page = self.pdf_manager.total_pages - 1
             self.update_preview()
             self.page_changed.emit(self.current_page)
+            self.toolbar.update_page_display(self.current_page + 1, self.pdf_manager.total_pages)
     
     def zoom_in(self) -> None:
         """
         Increase zoom level.
         """
-        self.zoom_manager.zoom_in()
-        self.update_preview()
-        self.zoom_changed.emit(self.zoom_manager.get_zoom())
+        if self.pdf_manager.is_pdf_loaded():
+            self.zoom_manager.zoom_in()
+            logger.info(f"Zoom In: {self.zoom_manager.get_zoom()}%")
+            self.update_preview()
+            self.zoom_changed.emit(self.zoom_manager.get_zoom())
+            self.toolbar.update_zoom_display(self.zoom_manager.get_zoom())
     
     def zoom_out(self) -> None:
         """
         Decrease zoom level.
         """
-        self.zoom_manager.zoom_out()
-        self.update_preview()
-        self.zoom_changed.emit(self.zoom_manager.get_zoom())
+        if self.pdf_manager.is_pdf_loaded():
+            self.zoom_manager.zoom_out()
+            logger.info(f"Zoom Out: {self.zoom_manager.get_zoom()}%")
+            self.update_preview()
+            self.zoom_changed.emit(self.zoom_manager.get_zoom())
+            self.toolbar.update_zoom_display(self.zoom_manager.get_zoom())
     
     def fit_width(self) -> None:
         """
@@ -221,8 +232,10 @@ class MainWindow(QMainWindow):
                 page_width = page.rect.width
                 view_width = self.preview_widget.width()
                 self.zoom_manager.fit_width(page_width, view_width)
+                logger.info(f"Fit Width: {self.zoom_manager.get_zoom()}%")
                 self.update_preview()
                 self.zoom_changed.emit(self.zoom_manager.get_zoom())
+                self.toolbar.update_zoom_display(self.zoom_manager.get_zoom())
     
     def fit_page(self) -> None:
         """
@@ -236,8 +249,10 @@ class MainWindow(QMainWindow):
                 view_width = self.preview_widget.width()
                 view_height = self.preview_widget.height()
                 self.zoom_manager.fit_page(page_width, page_height, view_width, view_height)
+                logger.info(f"Fit Page: {self.zoom_manager.get_zoom()}%")
                 self.update_preview()
                 self.zoom_changed.emit(self.zoom_manager.get_zoom())
+                self.toolbar.update_zoom_display(self.zoom_manager.get_zoom())
     
     def on_mouse_wheel_zoom(self, delta: int) -> None:
         """
@@ -247,8 +262,10 @@ class MainWindow(QMainWindow):
             delta (int): Mouse wheel delta (positive = zoom in, negative = zoom out).
         """
         if delta > 0:
+            logger.info("Mouse wheel zoom in")
             self.zoom_in()
         else:
+            logger.info("Mouse wheel zoom out")
             self.zoom_out()
     
     def update_preview(self) -> None:
@@ -256,25 +273,34 @@ class MainWindow(QMainWindow):
         Update the preview widget with the current page.
         """
         if not self.pdf_manager.is_pdf_loaded():
+            logger.warning("No PDF loaded")
             return
         
-        # Check cache first
-        cached_image = self.cache_manager.get_cached_page(self.current_page)
-        if cached_image:
-            self.preview_widget.set_image(cached_image, self.zoom_manager.get_zoom())
-            logger.debug(f"Displayed cached page {self.current_page}")
-        else:
-            # Render page
+        try:
+            # Get zoom factor
             zoom_factor = self.zoom_manager.get_zoom() / 100.0
+            logger.debug(f"Rendering page {self.current_page} with zoom {zoom_factor}x")
+            
+            # Always render with current zoom (don't use cache for zoom changes)
             image_bytes = self.pdf_manager.get_page_image(self.current_page, zoom=zoom_factor)
+            
             if image_bytes:
-                self.cache_manager.cache_page(self.current_page, image_bytes)
-                self.preview_widget.set_image(image_bytes, self.zoom_manager.get_zoom())
-                logger.debug(f"Rendered and displayed page {self.current_page}")
-        
-        # Update status bar
-        self.status_bar.set_page_info(self.current_page + 1, self.pdf_manager.total_pages)
-        self.status_bar.set_zoom_level(self.zoom_manager.get_zoom())
+                # Display the image
+                success = self.preview_widget.set_image(image_bytes, 100.0)  # Display at 100% since we already zoomed
+                if success:
+                    logger.debug(f"Successfully displayed page {self.current_page}")
+                else:
+                    logger.error(f"Failed to display page {self.current_page}")
+            else:
+                logger.error(f"Failed to render page {self.current_page}")
+            
+            # Update status bar
+            self.status_bar.set_page_info(self.current_page + 1, self.pdf_manager.total_pages)
+            self.status_bar.set_zoom_level(self.zoom_manager.get_zoom())
+            self.toolbar.update_zoom_display(self.zoom_manager.get_zoom())
+            
+        except Exception as e:
+            logger.error(f"Error updating preview: {e}", exc_info=True)
     
     def closeEvent(self, event) -> None:
         """
