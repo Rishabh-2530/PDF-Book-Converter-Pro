@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 
 from PySide6.QtWidgets import QScrollArea, QLabel
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtGui import QPixmap, QImage, QWheelEvent
 from PySide6.QtCore import Qt, Signal, QSize, QEvent
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class PreviewWidget(QScrollArea):
     
     Features:
         - Smooth scrolling
-        - Mouse wheel zoom support
+        - Mouse wheel zoom support (Ctrl + Scroll)
         - High-quality image rendering
         - Lazy loading with caching
     
@@ -45,6 +45,7 @@ class PreviewWidget(QScrollArea):
         
         # Enable mouse tracking for smooth interactions
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
         
         logger.info("PreviewWidget initialized")
     
@@ -88,21 +89,38 @@ class PreviewWidget(QScrollArea):
             logger.error(f"Error setting image: {e}", exc_info=True)
             return False
     
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: QWheelEvent) -> None:
         """
-        Handle mouse wheel events for zooming.
+        Handle mouse wheel events for zooming with Ctrl modifier.
         
         Args:
-            event: The wheel event.
+            event (QWheelEvent): The wheel event.
         """
-        if event.modifiers() == Qt.ControlModifier:
-            # Ctrl + Mouse wheel for zoom
-            delta = event.angleDelta().y()
-            self.mouse_wheel_zoom.emit(delta)
-            event.accept()
-        else:
-            # Normal scrolling
+        try:
+            # Check if Ctrl key is pressed
+            if event.modifiers() & Qt.ControlModifier:
+                # Ctrl + Mouse wheel for zoom
+                delta = event.angleDelta().y()
+                logger.debug(f"Mouse wheel zoom detected: delta={delta}")
+                self.mouse_wheel_zoom.emit(delta)
+                event.accept()
+                return
+            else:
+                # Normal scrolling without Ctrl
+                super().wheelEvent(event)
+        except Exception as e:
+            logger.error(f"Error in wheelEvent: {e}", exc_info=True)
             super().wheelEvent(event)
+    
+    def keyPressEvent(self, event) -> None:
+        """
+        Handle key press events.
+        
+        Args:
+            event: The key press event.
+        """
+        # Allow parent to handle key events
+        super().keyPressEvent(event)
     
     def clear(self) -> None:
         """
