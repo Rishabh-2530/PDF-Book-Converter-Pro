@@ -1,0 +1,12 @@
+PySide6==6.7.2
+PyMuPDF==1.23.8
+python-docx==0.8.11
+Pillow==10.1.0
+opencv-python==4.8.1.78
+tesseract-ocr==0.0.1
+easyocr==1.7.0
+layoutparser==0.3.0
+torch==2.1.1
+torchvision==0.16.1
+pydantic==2.5.0
+numpy==1.26.2
